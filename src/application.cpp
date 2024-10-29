@@ -1,13 +1,9 @@
-//#include "Image.h"
 #include "mesh.h"
 #include "texture.h"
 #include "camera.h"
-// Always include window first (because it includes glfw, which includes GL, which needs to be included AFTER glew).
-// Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
 DISABLE_WARNINGS_PUSH()
 #include <glad/glad.h>
-// Include glad before glfw3
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -27,8 +23,8 @@ public:
     Application()
         : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
         , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
-        , m_camera_front(&m_window, glm::vec3(20, 3, 20), glm::vec3(-1, 0, -1)) // camera for front view
-        , m_camera_top(&m_window, glm::vec3(0, 15, -10), glm::vec3(0, -1, 1))  // camera for top view
+        , m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1))
+        , m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1))
         , m_activeCamera(m_camera_front)
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
@@ -45,7 +41,6 @@ public:
                 onMouseReleased(button, mods);
             });
 
-        // Load meshes for tank body, wheels, gun, and turret
         m_wheel_pair = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wheel.obj");
         m_tank_body = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/tank_body.obj");
         m_gun = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/gun.obj");
@@ -70,42 +65,49 @@ public:
     }
 
     void update() {
-        int dummyInteger = 0; // Initialized to 0
         const float deltaTime = 0.016f; // Assuming a fixed timestep of 16ms 
 
         while (!m_window.shouldClose()) {
             m_window.updateInput();
             m_activeCamera.updateInput();
 
-            ImGui::Begin("Window");
+            ImGui::SetNextWindowSize(ImVec2(800, 1000), ImGuiCond_FirstUseEver);
+            ImGui::Begin("User Controls");
             if (ImGui::Button("Reset Simulation")) {
                 resetSimulation();
             }
+            ImGui::Checkbox("Use material if no texture", &m_useMaterial);
             ImGui::Separator();
             ImGui::Text("Tank Controls");
 
             ImGui::Checkbox("Drive Tank", &driveTank);
             if (driveTank) {
-                ImGui::SliderFloat("Tank Speed", &tankSpeed, 0.01f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Speed Tank", &tankSpeedAlongCurve, 0.001f, 0.1f, "%.3f");
             }
 
-            ImGui::Text("Turret Controls");
-            ImGui::SliderInt("Turret Angle", &turretRotationAngle, -45, 45);
-            ImGui::Checkbox("Animate Turret Movement", &animateTurret);
-            if (animateTurret) {
-                ImGui::SliderFloat("Turret Rotation Speed", &turretRotationSpeed, 1.0f, 10.0f);
-            }
-
-            ImGui::Text("Bazooka Controls");
-            ImGui::Checkbox("Animate Bazooka Tilt", &animateGun);
-            if (animateGun) {
-                ImGui::SliderFloat("Bazooka Tilt Speed", &gunTiltSpeed, 0.5f, 5.0f);
-            }
-            ImGui::SliderFloat("Gun Tilt Angle", &gunTiltAngle, -20.0f, 20.0f);
 
             ImGui::Separator();
-            ImGui::Text("Texture Controls");
-            ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+            ImGui::Text("Turret Controls");
+            if (!animateTurret) {
+                ImGui::SliderInt("Angle Turret", &turretRotationAngle, -30, 30);
+                
+            }
+            else {
+                ImGui::SliderFloat("Speed Turret", &turretRotationSpeed, 1.0f, 10.0f);
+            }
+            ImGui::Checkbox("Animate Turret Movement", &animateTurret);
+
+
+            ImGui::Separator();
+            ImGui::Text("Bazooka Controls");
+            if (!animateGun) {
+                ImGui::SliderFloat("Angle Bazooka", &gunTiltAngle, -20.0f, 20.0f);
+            }
+            else {
+                ImGui::SliderFloat("Speed Bazooka", &gunTiltSpeed, 0.5f, 5.0f);
+            }
+            ImGui::Checkbox("Animate Bazooka Tilt", &animateGun);
+
             ImGui::End();
 
             if (animateTurret && !turretAngleManuallySet) {
@@ -121,10 +123,11 @@ public:
             glEnable(GL_DEPTH_TEST);
 
             if (driveTank) {
-                float distanceTraveled = tankSpeed * deltaTime; // Distance = speed * time
-                tankCoords += glm::vec3(0.0f, 0.0f, distanceTraveled);
+                currentT += tankSpeedAlongCurve * deltaTime;
+                if (currentT > 1.0f) currentT = 0.0f;
+                tankCoords = calculateRectanglePath(currentT);
 
-                // Update the wheel rotation based on the distance traveled
+                float distanceTraveled = tankSpeedAlongCurve * deltaTime * glm::distance(rectP0, rectP1);
                 rotationAngleWheels += (distanceTraveled / radiusWheels);
             }
 
@@ -153,39 +156,107 @@ public:
         }
     }
 
-    void renderTank() {
-        glm::mat4 tankBodyMatrix = glm::translate(glm::mat4(1.0f), tankCoords);
-        renderMesh(m_tank_body, tankBodyMatrix);
+    glm::vec3 calculateRectanglePath(float t) {
+        float segmentT = fmod(t * 4.0f, 1.0f); // normalized within each segment
+        int segment = int(t * 4.0f);
 
-        std::vector<float> z_offsets = { -5.0f, -2.3f, 0.0f };
-        for (float z_offset : z_offsets) {
-            glm::mat4 wheelPositionMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, z_offset));
-            glm::mat4 wheelRotationMatrix = glm::rotate(glm::mat4(1.0f), rotationAngleWheels, glm::vec3(1.0f, 0.0f, 0.0f));
-
-            glm::mat4 finalWheelMatrix = tankBodyMatrix * wheelPositionMatrix * wheelRotationMatrix;
-
-            renderMesh(m_wheel_pair, finalWheelMatrix);
+        switch (segment) {
+        case 0: return glm::mix(rectP0, rectP1, segmentT); // bottom edge
+        case 1: return glm::mix(rectP1, rectP2, segmentT); // right edge
+        case 2: return glm::mix(rectP2, rectP3, segmentT); // top edge
+        case 3: return glm::mix(rectP3, rectP0, segmentT); // left edge back to origin
+        default: return rectP0;
         }
+    }
 
-        glm::mat4 turretModelMatrix = glm::translate(tankBodyMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
-        turretModelMatrix = glm::rotate(turretModelMatrix, glm::radians((float)turretRotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-        renderMesh(m_turret, turretModelMatrix);
+    // overrides the above for smooth transitions around the edges (look in both sides since its an armour tank)
+    glm::vec3 calculateRectanglePath(float t, glm::vec3& outDirection) {
+        float segmentT = fmod(t * 4.0f, 1.0f); // normalized within each segment
+        int segment = int(t * 4.0f);
 
-        glm::mat4 gunModelMatrix = glm::translate(turretModelMatrix, glm::vec3(0.0f, 0.0f, 0.0f));
-        gunModelMatrix = glm::rotate(gunModelMatrix, glm::radians(gunTiltAngle), glm::vec3(1.0f, 0.0f, 0.0f));
-        renderMesh(m_gun, gunModelMatrix);
+        // for smooth transitions
+        segmentT = glm::smoothstep(0.1f, 0.9f, segmentT);
+
+        glm::vec3 currentPos, nextPos;
+
+        switch (segment) {
+        case 0:
+            currentPos = glm::mix(rectP0, rectP1, segmentT);
+            nextPos = glm::mix(rectP0, rectP1, fmod(segmentT + 0.01f, 1.0f));
+            break;
+        case 1:
+            currentPos = glm::mix(rectP1, rectP2, segmentT);
+            nextPos = glm::mix(rectP1, rectP2, fmod(segmentT + 0.01f, 1.0f));
+            break;
+        case 2:
+            currentPos = glm::mix(rectP2, rectP3, segmentT);
+            nextPos = glm::mix(rectP2, rectP3, fmod(segmentT + 0.01f, 1.0f));
+            break;
+        case 3:
+            currentPos = glm::mix(rectP3, rectP0, segmentT);
+            nextPos = glm::mix(rectP3, rectP0, fmod(segmentT + 0.01f, 1.0f));
+            break;
+        default:
+            currentPos = rectP0;
+            nextPos = rectP1;
+            break;
+        }
+        outDirection = glm::normalize(nextPos - currentPos);
+
+        return currentPos;
     }
 
 
+    void renderTank() {
+        glm::vec3 tankDirection;
+        tankCoords = calculateRectanglePath(currentT, tankDirection);
+
+        // target angle using atan2 and normalize it within [-pi, pi]
+        float targetAngle = atan2(-tankDirection.z, tankDirection.x);
+
+        // Smoothly interpolate the current angle to the target angle with short-angle interpolation
+        static float currentAngle = targetAngle; 
+        float deltaAngle = targetAngle - currentAngle;
+
+        if (deltaAngle > 0.5* glm::pi<float>()) {
+            deltaAngle -= 2.0f * glm::pi<float>();
+        }
+        else if (deltaAngle < 0.5 * -glm::pi<float>()) {
+            deltaAngle += 2.0f * glm::pi<float>();
+        }
+        currentAngle += deltaAngle * 0.1f; // 0.1f to control the smoothness of the rotation
+
+        // Initial rotation to adjust for the model's -z forward direction in Blender
+        glm::mat4 initialAlignment = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Dynamic rotation to align with the smoothly interpolated angle
+        glm::mat4 dynamicRotation = glm::rotate(glm::mat4(1.0f), currentAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 tankBodyMatrix = glm::translate(glm::mat4(1.0f), tankCoords) * dynamicRotation * initialAlignment;
+        renderMesh(m_tank_body, tankBodyMatrix);
+
+        std::vector<glm::vec3> wheel_offsets = { { -0.7f, -1.6f, -3.5f }, { -0.7f, -1.6f, -0.5f }, { -0.7f, -1.6f, 2.5f } };
+
+        for (const glm::vec3& offset : wheel_offsets) {
+            glm::mat4 wheelPositionMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(offset.x, offset.y, offset.z));
+            glm::mat4 wheelRotationMatrix = glm::rotate(wheelPositionMatrix, glm::radians(rotationAngleWheels), glm::vec3(1.0f, 0.0f, 0.0f));
+            glm::mat4 finalWheelMatrix = tankBodyMatrix * wheelRotationMatrix;
+            renderMesh(m_wheel_pair, finalWheelMatrix);
+        }
+        glm::mat4 turretRotationMatrix = glm::rotate(glm::mat4(1.0f), glm::radians((float)turretRotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 turretModelMatrix = tankBodyMatrix * turretRotationMatrix;
+        renderMesh(m_turret, turretModelMatrix);
+
+        glm::mat4 gunModelMatrix = glm::rotate(turretModelMatrix, glm::radians(gunTiltAngle), glm::vec3(1.0f, 0.0f, 0.0f));
+        renderMesh(m_gun, gunModelMatrix);
+    }
 
     void resetSimulation() {
         tankCoords = glm::vec3(0.0f);
+        currentT = 0.0f;
         driveTank = false;
-        animateTurret = false;
-        animateGun = false;
-        tankSpeed = 0.05f;
+        tankSpeedAlongCurve = 0.01f;
         rotationAngleWheels = 0.0f;
-        turretRotationAngle = 0;
+        turretRotationAngle = 0.0f;
         turretRotationSpeed = 1.0f;
         gunTiltAngle = 0.0f;
         gunTiltSpeed = 1.0f;
@@ -193,6 +264,8 @@ public:
         gunDirection = 1;
         turretAngleManuallySet = false;
         gunAngleManuallySet = false;
+        animateTurret = false;
+        animateGun = false;
     }
 
     void onKeyPressed(int key, int mods) {
@@ -258,9 +331,9 @@ private:
     bool driveTank{ false };
     bool animateTurret{ false };
     bool animateGun{ false };
-    float tankSpeed{ 0.05f };
+    float tankSpeedAlongCurve{ 0.01f };
     float rotationAngleWheels{ 0.0f };
-    float radiusWheels{ 0.05f };
+    float radiusWheels{ 0.02f };
     int turretRotationAngle{ 0 };
     float turretRotationSpeed{ 1.0f };
     float gunTiltAngle{ 0.0f };
@@ -270,6 +343,13 @@ private:
     bool turretAngleManuallySet{ false };
     bool gunAngleManuallySet{ false };
     glm::vec3 tankCoords{ 0.0f };
+    float currentT = 0.0f;
+
+    // Rectangle control points
+    glm::vec3 rectP0 = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 rectP1 = glm::vec3(10.0f, 0.0f, 0.0f);
+    glm::vec3 rectP2 = glm::vec3(10.0f, 0.0f, 10.0f);
+    glm::vec3 rectP3 = glm::vec3(0.0f, 0.0f, 10.0f);
 
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_modelMatrix{ 1.0f };
