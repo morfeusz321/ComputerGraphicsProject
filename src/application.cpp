@@ -76,13 +76,33 @@ public:
             if (ImGui::Button("Reset Simulation")) {
                 resetSimulation();
             }
+            ImGui::Separator();
+            ImGui::Text("Material Properties");
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+            ImGui::Checkbox("Use Diffuse (Kd)", &useKd);
+            if (useKd) {
+                ImGui::ColorEdit3("Diffuse Color (Kd)", glm::value_ptr(kd));
+            }
+            ImGui::Checkbox("Use Specular (Ks)", &useKs);
+            if (useKs) {
+                ImGui::ColorEdit3("Specular Color (Ks)", glm::value_ptr(ks));
+            }
+            ImGui::Checkbox("Use Shininess", &useShininess);
+            if (useShininess) {
+                ImGui::SliderFloat("Shininess", &shininess, 1.0f, 128.0f);
+            }
+            ImGui::Checkbox("Use Roughness", &useRoughness);
+            if (useRoughness) {
+                ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
+            }
+
+            
             ImGui::Separator();
             ImGui::Text("Tank Controls");
 
             ImGui::Checkbox("Drive Tank", &driveTank);
             if (driveTank) {
-                ImGui::SliderFloat("Speed Tank", &tankSpeedAlongCurve, 0.001f, 0.1f, "%.3f");
+                ImGui::SliderFloat("Speed Tank", &tankSpeedAlongCurve, 0.01f, 0.3f, "%.3f");
             }
 
 
@@ -226,10 +246,10 @@ public:
         }
         currentAngle += deltaAngle * 0.1f; // 0.1f to control the smoothness of the rotation
 
-        // Initial rotation to adjust for the model's -z forward direction in Blender
+        // initial rotation to adjust for the model's -z forward direction in Blender
         glm::mat4 initialAlignment = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Dynamic rotation to align with the smoothly interpolated angle
+        // dynamic rotation to align with the smoothly interpolated angle
         glm::mat4 dynamicRotation = glm::rotate(glm::mat4(1.0f), currentAngle, glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 tankBodyMatrix = glm::translate(glm::mat4(1.0f), tankCoords) * dynamicRotation * initialAlignment;
         renderMesh(m_tank_body, tankBodyMatrix);
@@ -297,11 +317,33 @@ public:
         const glm::mat4 mvpMatrix = m_projectionMatrix * m_activeCamera.viewMatrix() * modelMatrix;
         const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
 
+        glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 5.0f);  
+        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f); // white light
+
         for (GPUMesh& mesh : meshes) {
             m_defaultShader.bind();
+
             glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
             glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
 
+            glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(lightPos));
+            glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(lightColor));
+            glUniform3fv(m_defaultShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
+
+            glUniform1i(m_defaultShader.getUniformLocation("useKd"), useKd);
+            if (useKd) glUniform3fv(m_defaultShader.getUniformLocation("kd"), 1, glm::value_ptr(kd));
+
+            glUniform1i(m_defaultShader.getUniformLocation("useKs"), useKs);
+            if (useKs) glUniform3fv(m_defaultShader.getUniformLocation("ks"), 1, glm::value_ptr(ks));
+
+            glUniform1i(m_defaultShader.getUniformLocation("useShininess"), useShininess);
+            if (useShininess) glUniform1f(m_defaultShader.getUniformLocation("shininess"), shininess);
+
+            glUniform1i(m_defaultShader.getUniformLocation("useRoughness"), useRoughness);
+            if (useRoughness) glUniform1f(m_defaultShader.getUniformLocation("roughness"), roughness);
+
+            // Set texture and material flags
             if (mesh.hasTextureCoords()) {
                 m_texture.bind(GL_TEXTURE0);
                 glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
@@ -312,9 +354,13 @@ public:
                 glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                 glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
             }
+
+            // Render the mesh
             mesh.draw(m_defaultShader);
         }
     }
+
+
 
 private:
     Window m_window;
@@ -344,12 +390,26 @@ private:
     bool gunAngleManuallySet{ false };
     glm::vec3 tankCoords{ 0.0f };
     float currentT = 0.0f;
+    bool userOverrideKd{ false };
+    bool userOverrideKs{ false };
 
     // Rectangle control points
     glm::vec3 rectP0 = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 rectP1 = glm::vec3(10.0f, 0.0f, 0.0f);
     glm::vec3 rectP2 = glm::vec3(10.0f, 0.0f, 10.0f);
     glm::vec3 rectP3 = glm::vec3(0.0f, 0.0f, 10.0f);
+
+    // Material properties
+    glm::vec3 kd{ 0.8f, 0.8f, 0.8f };      // Diffuse color
+    glm::vec3 ks{ 0.1, 0.1f, 0.1f };      // Specular color
+    float shininess{ 0.0f };               // Shininess for specular reflection
+    float roughness{ 0.5f };                // Roughness for surface roughness
+
+    // Toggles for material properties
+    bool useKd{ true };
+    bool useKs{ true };
+    bool useShininess{ true };
+    bool useRoughness{ true };
 
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_modelMatrix{ 1.0f };
