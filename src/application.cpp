@@ -1,6 +1,7 @@
 #include "mesh.h"
 #include "texture.h"
 #include "camera.h"
+#include "bezier/bezier.h"
 #include "skybox/skybox.h"
 #include "cubemap/cubemap.h"
 
@@ -25,7 +26,7 @@ class Application
 {
 public:
     Application()
-        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41), m_texture(RESOURCE_ROOT "resources/checkerboard.png"), m_cubemap(RESOURCE_ROOT "resources/cubemap/"), m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)), m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)), m_activeCamera(m_camera_front), m_skybox(RESOURCE_ROOT "shaders/")
+        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41), m_texture(RESOURCE_ROOT "resources/checkerboard.png"), m_cubemap(RESOURCE_ROOT "resources/cubemap/"), m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)), m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)), m_activeCamera(m_camera_front), m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 0.0f}, {10.0f, -5.0f, 0.0f}, {15.0f, 0.0f, 0.0f})
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods)
                                      {
@@ -165,16 +166,16 @@ public:
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
 
-            if (driveTank)
-            {
+            if (driveTank) {
                 currentT += tankSpeedAlongCurve * deltaTime;
                 if (currentT > 1.0f)
                     currentT = 0.0f;
-                tankCoords = calculateRectanglePath(currentT);
 
-                float distanceTraveled = tankSpeedAlongCurve * deltaTime * glm::distance(rectP0, rectP1);
+                tankCoords = m_bezierPath.calculatePosition(currentT);
+                float distanceTraveled = tankSpeedAlongCurve * deltaTime * glm::distance(m_bezierPath.getP0(), m_bezierPath.getP3());
                 rotationAngleWheels += (distanceTraveled / radiusWheels);
             }
+
 
             renderTank();
             m_window.swapBuffers();
@@ -444,6 +445,7 @@ private:
     std::vector<GPUMesh> m_turret;
 
     Texture m_texture;
+    BezierPath m_bezierPath;
     bool m_useMaterial{true};
     bool driveTank{false};
     bool animateTurret{false};

@@ -11,6 +11,7 @@ endif()
 # Define source files
 set(SOURCES
     src/application.cpp
+    src/bezier/bezier.cpp
     src/cubemap/cubemap.cpp
     src/skybox/skybox.cpp
     src/texture.cpp
@@ -20,6 +21,7 @@ set(SOURCES
 
 # Define header files
 set(HEADERS
+    src/bezier/bezier.h
     src/cubemap/cubemap.h
     src/skybox/skybox.h
     src/texture.h
@@ -32,6 +34,7 @@ add_executable(Master_TechDemo ${SOURCES} ${HEADERS})
 # Add include directories
 target_include_directories(Master_TechDemo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bezier
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cubemap
     ${CMAKE_CURRENT_SOURCE_DIR}/src/skybox
 )
