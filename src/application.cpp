@@ -26,7 +26,7 @@ class Application
 {
 public:
     Application()
-        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41), m_texture(RESOURCE_ROOT "resources/checkerboard.png"), m_cubemap(RESOURCE_ROOT "resources/cubemap/"), m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)), m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)), m_activeCamera(m_camera_front), m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 0.0f}, {10.0f, -5.0f, 0.0f}, {15.0f, 0.0f, 0.0f})
+        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41), m_texture(RESOURCE_ROOT "resources/checkerboard.png"), m_cubemap(RESOURCE_ROOT "resources/cubemap/"), m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)), m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)), m_activeCamera(m_camera_front), m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 0.0f}, {10.0f, -5.0f, 0.0f}, {15.0f, 0.0f, 0.0f}), m_usePBR(true)
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods)
                                      {
@@ -63,6 +63,11 @@ public:
             environmentBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/environment_vert.glsl");
             environmentBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/environment_frag.glsl");
             m_environmentShader = environmentBuilder.build();
+
+            ShaderBuilder pbrBuilder;
+            pbrBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/pbr_vert.glsl");
+            pbrBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/pbr_frag.glsl");
+            m_pbrShader = pbrBuilder.build();
         }
         catch (ShaderLoadingException e)
         {
@@ -88,6 +93,16 @@ public:
                 resetSimulation();
             }
             ImGui::Separator();
+            ImGui::Text("PBR Material Properties");
+            ImGui::Checkbox("Use PBR Shading", &m_usePBR);
+            if (m_usePBR)
+            {
+                ImGui::ColorEdit3("Albedo", glm::value_ptr(m_albedo));
+                ImGui::SliderFloat("Metallic", &m_metallic, 0.0f, 1.0f);
+                ImGui::SliderFloat("Roughness", &m_pbrRoughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("Ambient Occlusion", &m_ao, 0.0f, 1.0f);
+            }
+            ImGui::Separator();
             ImGui::Text("Material Properties");
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
             ImGui::Checkbox("Use Diffuse (Kd)", &useKd);
@@ -100,16 +115,7 @@ public:
             {
                 ImGui::ColorEdit3("Specular Color (Ks)", glm::value_ptr(ks));
             }
-            ImGui::Checkbox("Use Shininess", &useShininess);
-            if (useShininess)
-            {
-                ImGui::SliderFloat("Shininess", &shininess, 1.0f, 128.0f);
-            }
-            ImGui::Checkbox("Use Roughness", &useRoughness);
-            if (useRoughness)
-            {
-                ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
-            }
+            
 
             ImGui::Separator();
             ImGui::Text("Tank Controls");
@@ -131,7 +137,6 @@ public:
                 ImGui::SliderFloat("Speed Turret", &turretRotationSpeed, 1.0f, 10.0f);
             }
             ImGui::Checkbox("Animate Turret Movement", &animateTurret);
-
             ImGui::Separator();
             ImGui::Text("Bazooka Controls");
             if (!animateGun)
@@ -166,7 +171,8 @@ public:
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
 
-            if (driveTank) {
+            if (driveTank)
+            {
                 currentT += tankSpeedAlongCurve * deltaTime;
                 if (currentT > 1.0f)
                     currentT = 0.0f;
@@ -175,7 +181,6 @@ public:
                 float distanceTraveled = tankSpeedAlongCurve * deltaTime * glm::distance(m_bezierPath.getP0(), m_bezierPath.getP3());
                 rotationAngleWheels += (distanceTraveled / radiusWheels);
             }
-
 
             renderTank();
             m_window.swapBuffers();
@@ -376,55 +381,88 @@ public:
 
         for (GPUMesh &mesh : meshes)
         {
-            m_environmentShader.bind();
-
-            // Set matrices
-            glUniformMatrix4fv(m_environmentShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-            glUniformMatrix4fv(m_environmentShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
-            glUniformMatrix3fv(m_environmentShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-
-            // Set lighting uniforms
-            glUniform3fv(m_environmentShader.getUniformLocation("lightPos"), 1, glm::value_ptr(lightPos));
-            glUniform3fv(m_environmentShader.getUniformLocation("lightColor"), 1, glm::value_ptr(lightColor));
-            glUniform3fv(m_environmentShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
-
-            // Set material properties
-            glUniform1i(m_environmentShader.getUniformLocation("useKd"), useKd);
-            if (useKd)
-                glUniform3fv(m_environmentShader.getUniformLocation("kd"), 1, glm::value_ptr(kd));
-
-            glUniform1i(m_environmentShader.getUniformLocation("useKs"), useKs);
-            if (useKs)
-                glUniform3fv(m_environmentShader.getUniformLocation("ks"), 1, glm::value_ptr(ks));
-
-            glUniform1i(m_environmentShader.getUniformLocation("useShininess"), useShininess);
-            if (useShininess)
-                glUniform1f(m_environmentShader.getUniformLocation("shininess"), shininess);
-
-            glUniform1i(m_environmentShader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
-            glUniform1f(m_environmentShader.getUniformLocation("reflectivity"), m_reflectivity);
-
-            // Bind textures
-            if (mesh.hasTextureCoords())
+            if (m_usePBR)
             {
-                m_texture.bind(GL_TEXTURE0);
-                glUniform1i(m_environmentShader.getUniformLocation("colorMap"), 0);
-                glUniform1i(m_environmentShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+                m_pbrShader.bind();
+
+                glUniformMatrix4fv(m_pbrShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                glUniformMatrix4fv(m_pbrShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+                glUniformMatrix3fv(m_pbrShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+                glUniform3fv(m_pbrShader.getUniformLocation("lightPos"), 1, glm::value_ptr(lightPos));
+                glUniform3fv(m_pbrShader.getUniformLocation("lightColor"), 1, glm::value_ptr(lightColor));
+                glUniform3fv(m_pbrShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
+
+                glUniform3fv(m_pbrShader.getUniformLocation("albedo"), 1, glm::value_ptr(m_albedo));
+                glUniform1f(m_pbrShader.getUniformLocation("metallic"), m_metallic);
+                glUniform1f(m_pbrShader.getUniformLocation("roughness"), m_pbrRoughness);
+                glUniform1f(m_pbrShader.getUniformLocation("ao"), m_ao);
+
+                glUniform1i(m_pbrShader.getUniformLocation("useTexture"), mesh.hasTextureCoords());
+                glUniform1i(m_pbrShader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
+                glUniform1f(m_pbrShader.getUniformLocation("reflectivity"), m_reflectivity);
+
+                if (mesh.hasTextureCoords())
+                {
+                    m_texture.bind(GL_TEXTURE0);
+                    glUniform1i(m_pbrShader.getUniformLocation("colorMap"), 0);
+                }
+
+                m_cubemap.bind(GL_TEXTURE1);
+                glUniform1i(m_pbrShader.getUniformLocation("cubemap"), 1);
+
+                mesh.draw(m_pbrShader);
             }
             else
             {
-                glUniform1i(m_environmentShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+                renderMeshWithEnvironmentShader(mesh, modelMatrix, mvpMatrix, normalModelMatrix, lightPos, lightColor);
             }
+        }
+    }
+    void renderMeshWithEnvironmentShader(GPUMesh &mesh, const glm::mat4 &modelMatrix,
+                                         const glm::mat4 &mvpMatrix, const glm::mat3 &normalModelMatrix,
+                                         const glm::vec3 &lightPos, const glm::vec3 &lightColor)
+    {
+        m_environmentShader.bind();
+
+        glUniformMatrix4fv(m_environmentShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+        glUniformMatrix4fv(m_environmentShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix3fv(m_environmentShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+        glUniform3fv(m_environmentShader.getUniformLocation("lightPos"), 1, glm::value_ptr(lightPos));
+        glUniform3fv(m_environmentShader.getUniformLocation("lightColor"), 1, glm::value_ptr(lightColor));
+        glUniform3fv(m_environmentShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
+
+        glUniform1i(m_environmentShader.getUniformLocation("useKd"), useKd);
+        if (useKd)
+            glUniform3fv(m_environmentShader.getUniformLocation("kd"), 1, glm::value_ptr(kd));
+
+        glUniform1i(m_environmentShader.getUniformLocation("useKs"), useKs);
+        if (useKs)
+            glUniform3fv(m_environmentShader.getUniformLocation("ks"), 1, glm::value_ptr(ks));
+
+        
+
+        glUniform1i(m_environmentShader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
+        glUniform1f(m_environmentShader.getUniformLocation("reflectivity"), m_reflectivity);
+
+        if (mesh.hasTextureCoords())
+        {
             m_texture.bind(GL_TEXTURE0);
             glUniform1i(m_environmentShader.getUniformLocation("colorMap"), 0);
             glUniform1i(m_environmentShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-            // Bind cubemap
-            m_cubemap.bind(GL_TEXTURE1);
-            glUniform1i(m_environmentShader.getUniformLocation("cubemap"), 1);
-
-            // Render the mesh
-            mesh.draw(m_environmentShader);
         }
+        else
+        {
+            glUniform1i(m_environmentShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+        }
+        m_texture.bind(GL_TEXTURE0);
+        glUniform1i(m_environmentShader.getUniformLocation("colorMap"), 0);
+        glUniform1i(m_environmentShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+        m_cubemap.bind(GL_TEXTURE1);
+        glUniform1i(m_environmentShader.getUniformLocation("cubemap"), 1);
+
+        mesh.draw(m_environmentShader);
     }
 
 private:
@@ -475,8 +513,14 @@ private:
     // Material properties
     glm::vec3 kd{0.8f, 0.8f, 0.8f}; // Diffuse color
     glm::vec3 ks{0.1, 0.1f, 0.1f};  // Specular color
-    float shininess{0.0f};          // Shininess for specular reflection
-    float roughness{0.5f};          // Roughness for surface roughness
+    Shader m_pbrShader;
+
+    // PBR material properties
+    glm::vec3 m_albedo{0.5f, 0.5f, 0.5f};
+    float m_metallic{0.0f};
+    float m_pbrRoughness{0.5f};
+    float m_ao{1.0f};
+    bool m_usePBR{true};
 
     // Toggles for material properties
     bool useKd{true};

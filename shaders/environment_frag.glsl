@@ -22,9 +22,6 @@ uniform vec3 lightColor;
 uniform vec3 viewPos;
 uniform bool useKd;
 uniform bool useKs;
-uniform bool useShininess;
-uniform bool useRoughness;
-uniform float roughness;
 
 out vec4 fragColor;
 
@@ -63,7 +60,7 @@ void main() {
     // Calculate specular
     float spec = 0.0;
     if (useKs) {
-        float specPower = useShininess ? shininess : 32.0;
+        float specPower = 32.0;
         spec = pow(max(dot(normal, halfwayDir), 0.0), specPower);
     }
     vec3 specular = lightColor * spec * (useKs ? ks : vec3(0.1));
