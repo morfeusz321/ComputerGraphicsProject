@@ -20,6 +20,7 @@ uniform bool useTexture;
 uniform bool useEnvironmentMapping;
 uniform float reflectivity;
 
+layout(location = 0) out vec4 fragColor;
 const float PI = 3.14159265359;
 
 // PBR functions
@@ -117,5 +118,5 @@ void main() {
     // Gamma correction
     color = pow(color, vec3(1.0/2.2));
 
-    gl_FragColor = vec4(color, 1.0);
+    fragColor = vec4(color, 1.0);
 }
