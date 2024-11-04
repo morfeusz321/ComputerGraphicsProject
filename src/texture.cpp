@@ -11,7 +11,14 @@ Texture::Texture(std::filesystem::path filePath)
 {
     // Load image from disk to CPU memory.
     // Image class is defined in <framework/image.h>
-    Image cpuTexture { filePath };
+    Image cpuTexture{ filePath };
+    if (!cpuTexture.get_data()) { // added for debugging
+        std::cerr << "Failed to load texture from: " << filePath << std::endl;
+        return;
+    }
+    std::cout << "Successfully loaded texture from: " << filePath << " with size "
+        << cpuTexture.width << "x" << cpuTexture.height
+        << " and " << cpuTexture.channels << " channels." << std::endl;
 
     // Create a texture on the GPU and bind it for parameter setting
     glGenTextures(1, &m_texture);

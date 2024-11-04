@@ -1,11 +1,8 @@
 #version 410
+vec3 kd;
+vec3 ks;
+float shininess;
 
-layout(std140) uniform Material {
-    vec3 kd;
-    vec3 ks;
-    float shininess;
-    float transparency;
-};
 
 in vec3 fragPosition;
 in vec3 fragNormal;
@@ -39,7 +36,7 @@ void main() {
     } else if (useKd) {
         baseColor = kd;
     } else {
-        baseColor = vec3(0.8);
+        baseColor = vec3(0.0);
     }
     
     // Sample environment map

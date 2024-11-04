@@ -80,6 +80,7 @@ public:
         {
             std::cerr << e.what() << std::endl;
         }
+      
 
         resetSimulation();
     }
@@ -112,15 +113,19 @@ public:
             ImGui::Separator();
             ImGui::Text("Material Properties");
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
-            ImGui::Checkbox("Use Diffuse (Kd)", &useKd);
-            if (useKd)
+            ImGui::Checkbox("Use Diffuse (Kd)", &m_useKd);
+            if (m_useKd)
             {
-                ImGui::ColorEdit3("Diffuse Color (Kd)", glm::value_ptr(kd));
+                ImGui::ColorEdit3("Diffuse Color (Kd)", glm::value_ptr(m_kd));
             }
-            ImGui::Checkbox("Use Specular (Ks)", &useKs);
-            if (useKs)
+            ImGui::Checkbox("Use Specular (Ks)", &m_useKs);
+            if (m_useKs)
             {
-                ImGui::ColorEdit3("Specular Color (Ks)", glm::value_ptr(ks));
+                ImGui::ColorEdit3("Specular Color (Ks)", glm::value_ptr(m_ks));
+            }
+            if (useShininess)
+            {
+                ImGui::SliderFloat("Shininess", &shininess, 32.0f, 128.0f);
             }
             
 
@@ -390,7 +395,7 @@ public:
         const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
 
         glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 5.0f);
-        glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+        glm::vec3 lightColor = glm::vec3(0.788f, 0.89f, 0.776f);
 
         for (GPUMesh &mesh : meshes)
         {
@@ -410,6 +415,7 @@ public:
                 glUniform1f(m_pbrShader.getUniformLocation("metallic"), m_metallic);
                 glUniform1f(m_pbrShader.getUniformLocation("roughness"), m_pbrRoughness);
                 glUniform1f(m_pbrShader.getUniformLocation("ao"), m_ao);
+
 
                 glUniform1i(m_pbrShader.getUniformLocation("useTexture"), mesh.hasTextureCoords());
                 glUniform1i(m_pbrShader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
@@ -446,13 +452,14 @@ public:
         glUniform3fv(m_environmentShader.getUniformLocation("lightColor"), 1, glm::value_ptr(lightColor));
         glUniform3fv(m_environmentShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
 
-        glUniform1i(m_environmentShader.getUniformLocation("useKd"), useKd);
-        if (useKd)
-            glUniform3fv(m_environmentShader.getUniformLocation("kd"), 1, glm::value_ptr(kd));
+        glUniform1i(m_environmentShader.getUniformLocation("useKd"), m_useKd);
+        if (m_useKd)
+            glUniform3fv(m_environmentShader.getUniformLocation("kd"), 1, glm::value_ptr(m_kd));
 
-        glUniform1i(m_environmentShader.getUniformLocation("useKs"), useKs);
-        if (useKs)
-            glUniform3fv(m_environmentShader.getUniformLocation("ks"), 1, glm::value_ptr(ks));
+        glUniform1i(m_environmentShader.getUniformLocation("useKs"), m_useKs);
+        if (m_useKs)
+            glUniform3fv(m_environmentShader.getUniformLocation("ks"), 1, glm::value_ptr(m_ks));
+        
 
         
 
@@ -523,8 +530,6 @@ private:
     bool gunAngleManuallySet{false};
     glm::vec3 tankCoords{0.0f};
     float currentT = 0.0f;
-    bool userOverrideKd{false};
-    bool userOverrideKs{false};
 
     // Rectangle control points
     glm::vec3 rectP0 = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -532,10 +537,7 @@ private:
     glm::vec3 rectP2 = glm::vec3(10.0f, 0.0f, 10.0f);
     glm::vec3 rectP3 = glm::vec3(0.0f, 0.0f, 10.0f);
 
-    // Material properties
-    glm::vec3 kd{0.8f, 0.8f, 0.8f}; // Diffuse color
-    glm::vec3 ks{0.1, 0.1f, 0.1f};  // Specular color
-    Shader m_pbrShader;
+    
 
     // PBR material properties
     glm::vec3 m_albedo{0.5f, 0.5f, 0.5f};
@@ -544,11 +546,17 @@ private:
     float m_ao{1.0f};
     bool m_usePBR{true};
 
-    // Toggles for material properties
-    bool useKd{true};
-    bool useKs{true};
+  
+    // Basic material properties
+    glm::vec3 m_kd{ 0.8f, 0.8f, 0.8f }; // Diffuse color
+    glm::vec3 m_ks{ 0.1, 0.1f, 0.1f };  // Specular color
+    float shininess{ 32.0f };  // Specular color
+    
+    Shader m_pbrShader;
+    bool m_useKd{true};
+    bool m_useKs{true};
     bool useShininess{true};
-    bool useRoughness{true};
+  
 
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_modelMatrix{1.0f};
