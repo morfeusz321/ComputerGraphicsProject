@@ -557,7 +557,6 @@ private:
     bool m_useKs{true};
     bool useShininess{true};
   
-
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_modelMatrix{1.0f};
 
