@@ -29,7 +29,7 @@ set(HEADERS
     src/camera.h
 )
 
-add_executable(Master_TechDemo ${SOURCES} ${HEADERS})
+add_executable(Master_TechDemo ${SOURCES} ${HEADERS} "src/box/box.cpp" "src/box/box.h")
 
 # Add include directories
 target_include_directories(Master_TechDemo PRIVATE

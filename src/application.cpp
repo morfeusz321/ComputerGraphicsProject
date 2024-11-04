@@ -4,6 +4,7 @@
 #include "bezier/bezier.h"
 #include "skybox/skybox.h"
 #include "cubemap/cubemap.h"
+#include "box/box.h"
 
 #include <framework/disable_all_warnings.h>
 DISABLE_WARNINGS_PUSH()
@@ -29,6 +30,7 @@ public:
         : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41),
         m_texture(RESOURCE_ROOT "resources/checkerboard.png"),
         m_cubemap(RESOURCE_ROOT "resources/cubemap/"),
+        m_box{ RESOURCE_ROOT "resources/box" },
         m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)),
         m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)),
         m_activeCamera(m_camera_front),
@@ -99,6 +101,14 @@ public:
             if (ImGui::Button("Reset Simulation"))
             {
                 resetSimulation();
+            }
+            // Switching between objects
+            ImGui::Separator();
+            ImGui::Text("Object Selection");
+            int currentObject = static_cast<int>(m_activeObject);
+            const char* objectNames[] = { "Tank", "Box" };
+            if (ImGui::Combo("Active Object", &currentObject, objectNames, IM_ARRAYSIZE(objectNames))) {
+                m_activeObject = static_cast<ObjectType>(currentObject);
             }
             ImGui::Separator();
             ImGui::Text("PBR Material Properties");
@@ -179,12 +189,13 @@ public:
                 animateGunTilt();
             }
 
+            // Rendering
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glEnable(GL_DEPTH_TEST);
 
-            if (driveTank)
-            {
+            // Drive the tank only if it’s the active object
+            if (driveTank && m_activeObject == ObjectType::Tank) {
                 currentT += tankSpeedAlongCurve * deltaTime;
                 if (currentT > 1.0f)
                     currentT = 0.0f;
@@ -194,7 +205,13 @@ public:
                 rotationAngleWheels += (distanceTraveled / radiusWheels);
             }
 
-            renderTank();
+            // Object-specific rendering
+            if (m_activeObject == ObjectType::Tank) {
+                renderTank();
+            }
+            else if (m_activeObject == ObjectType::Box) {
+                renderBox();
+            }
             m_window.swapBuffers();
         }
     }
@@ -337,6 +354,31 @@ public:
         glm::mat4 gunModelMatrix = glm::rotate(turretModelMatrix, glm::radians(gunTiltAngle), glm::vec3(1.0f, 0.0f, 0.0f));
         renderMesh(m_gun, gunModelMatrix);
     }
+    void renderBox()
+    {
+        m_box.bindColorTexture(GL_TEXTURE0);    // Bind color texture to texture unit 0
+        m_box.bindNormalTexture(GL_TEXTURE1);   // Bind normal map to texture unit 1
+
+        if (m_usePBR) {
+            m_pbrShader.bind();
+
+            // Set the shader uniforms for the textures
+            glUniform1i(m_pbrShader.getUniformLocation("colorMap"), 0); // Texture unit 0
+            //glUniform1i(m_pbrShader.getUniformLocation("normalMap"), 1); // Texture unit 1
+            glUniform3fv(m_pbrShader.getUniformLocation("albedo"), 1, glm::value_ptr(m_albedo));
+            glUniform1f(m_pbrShader.getUniformLocation("metallic"), m_metallic);
+            glUniform1f(m_pbrShader.getUniformLocation("roughness"), m_pbrRoughness);
+            glUniform1f(m_pbrShader.getUniformLocation("ao"), m_ao);
+        }
+        else {
+            m_environmentShader.bind();
+            glUniform1i(m_environmentShader.getUniformLocation("colorMap"), 0); // Texture unit 0
+            //glUniform1i(m_environmentShader.getUniformLocation("normalMap"), 1); // Texture unit 1
+        }
+        // Loop through each mesh in the box and render with the correct shader and textures
+    }
+
+
 
     void resetSimulation()
     {
@@ -389,7 +431,7 @@ public:
         std::cout << "Released mouse button: " << button << std::endl;
     }
 
-    void renderMesh(std::vector<GPUMesh> &meshes, const glm::mat4 &modelMatrix)
+    void renderMesh(std::vector<GPUMesh>& meshes, const glm::mat4& modelMatrix)
     {
         const glm::mat4 mvpMatrix = m_projectionMatrix * m_activeCamera.viewMatrix() * modelMatrix;
         const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
@@ -397,7 +439,7 @@ public:
         glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 5.0f);
         glm::vec3 lightColor = glm::vec3(0.788f, 0.89f, 0.776f);
 
-        for (GPUMesh &mesh : meshes)
+        for (GPUMesh& mesh : meshes)
         {
             if (m_usePBR)
             {
@@ -416,18 +458,23 @@ public:
                 glUniform1f(m_pbrShader.getUniformLocation("roughness"), m_pbrRoughness);
                 glUniform1f(m_pbrShader.getUniformLocation("ao"), m_ao);
 
-
                 glUniform1i(m_pbrShader.getUniformLocation("useTexture"), mesh.hasTextureCoords());
                 glUniform1i(m_pbrShader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
                 glUniform1f(m_pbrShader.getUniformLocation("reflectivity"), m_reflectivity);
 
-                if (mesh.hasTextureCoords())
-                {
+                // Bind box textures when rendering the box
+                if (m_activeObject == ObjectType::Box) {
+                    m_box.bindColorTexture(GL_TEXTURE2);  // Bind color texture to texture unit 2
+                    m_box.bindNormalTexture(GL_TEXTURE3); // Bind normal map to texture unit 3
+                    glUniform1i(m_pbrShader.getUniformLocation("colorMap"), 2); // Texture unit 2
+                    glUniform1i(m_pbrShader.getUniformLocation("normalMap"), 3); // Texture unit 3
+                }
+                else if (mesh.hasTextureCoords()) { // For other objects with textures
                     m_texture.bind(GL_TEXTURE0);
                     glUniform1i(m_pbrShader.getUniformLocation("colorMap"), 0);
                 }
 
-                m_cubemap.bind(GL_TEXTURE1);
+                m_cubemap.bind(GL_TEXTURE1);  // Cubemap remains bound to texture unit 1
                 glUniform1i(m_pbrShader.getUniformLocation("cubemap"), 1);
 
                 mesh.draw(m_pbrShader);
@@ -504,6 +551,16 @@ private:
     };
     CameraType m_activeCameraType;
 
+    //Normal mapping box
+    Box m_box;
+
+    //Switch between objects
+    enum class ObjectType {
+        Tank,
+        Box
+    };
+    ObjectType m_activeObject = ObjectType::Tank;
+
 
     // Tanks movement
     std::vector<GPUMesh> m_wheel_pair;
@@ -545,6 +602,7 @@ private:
     float m_pbrRoughness{0.5f};
     float m_ao{1.0f};
     bool m_usePBR{true};
+
 
   
     // Basic material properties
