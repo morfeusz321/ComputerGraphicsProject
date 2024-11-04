@@ -26,7 +26,14 @@ class Application
 {
 public:
     Application()
-        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41), m_texture(RESOURCE_ROOT "resources/checkerboard.png"), m_cubemap(RESOURCE_ROOT "resources/cubemap/"), m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)), m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)), m_activeCamera(m_camera_front), m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({0.0f, 0.0f, 0.0f}, {5.0f, 5.0f, 0.0f}, {10.0f, -5.0f, 0.0f}, {15.0f, 0.0f, 0.0f}), m_usePBR(true)
+        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41),
+        m_texture(RESOURCE_ROOT "resources/checkerboard.png"),
+        m_cubemap(RESOURCE_ROOT "resources/cubemap/"),
+        m_camera_front(&m_window, glm::vec3(18, 3, 22), glm::vec3(-1, 0, -1)),
+        m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)),
+        m_activeCamera(m_camera_front),
+        m_activeCameraType(CameraType::Front),  // Initialize the active camera type
+        m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({ 0.0f, 0.0f, 0.0f }, { 5.0f, 5.0f, 0.0f }, { 10.0f, -5.0f, 0.0f }, { 15.0f, 0.0f, 0.0f })
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods)
                                      {
@@ -278,6 +285,12 @@ public:
         glm::vec3 tankDirection;
         tankCoords = calculateRectanglePath(currentT, tankDirection);
 
+        // for camera to move with the tank
+        if (m_activeCameraType == CameraType::Top) {
+            glm::vec3 offsetPosition = tankCoords + glm::vec3(2.0f, 0.0f, 0.0f);  
+            m_activeCamera.followTarget(offsetPosition, 20.0f);  
+        }
+
         // target angle using atan2 and normalize it within [-pi, pi]
         float targetAngle = atan2(-tankDirection.z, tankDirection.x);
 
@@ -341,13 +354,13 @@ public:
 
     void onKeyPressed(int key, int mods)
     {
-        if (key == GLFW_KEY_1)
-        {
+        if (key == GLFW_KEY_1) {
             m_activeCamera = m_camera_front;
+            m_activeCameraType = CameraType::Front;
         }
-        else if (key == GLFW_KEY_2)
-        {
+        else if (key == GLFW_KEY_2) {
             m_activeCamera = m_camera_top;
+            m_activeCameraType = CameraType::Top;
         }
     }
 
@@ -477,6 +490,15 @@ private:
     bool m_useEnvironmentMapping{true};
     float m_reflectivity{0.5f};
 
+    // Moving camera
+    enum class CameraType {
+        Front,
+        Top
+    };
+    CameraType m_activeCameraType;
+
+
+    // Tanks movement
     std::vector<GPUMesh> m_wheel_pair;
     std::vector<GPUMesh> m_tank_body;
     std::vector<GPUMesh> m_gun;

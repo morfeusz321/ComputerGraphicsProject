@@ -50,6 +50,19 @@ void Camera::rotateY(float angle)
     m_up = glm::normalize(glm::cross(m_forward, horAxis));
 }
 
+
+void Camera::followTarget(const glm::vec3& targetPosition, float heightAboveTarget)
+{
+    // Position the camera above the target at the specified height and apply a downward offset
+    m_position = targetPosition + glm::vec3(0.0f, heightAboveTarget, 0.0f);
+
+    // Set the camera to look directly at the target
+    m_forward = glm::normalize(targetPosition - m_position);
+
+    // Keep the up vector consistent for perspective view
+    m_up = glm::vec3(0.0f, 0.0f, 1.0f);  // Or adjust it as needed, e.g., (0.0f, 0.0f, 1.0f) for a downward perspective
+}
+
 void Camera::updateInput()
 {
     constexpr float moveSpeed = 0.03f;

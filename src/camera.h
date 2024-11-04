@@ -20,6 +20,9 @@ class Camera {
         glm::vec3 cameraPos() const;
         glm::mat4 viewMatrix() const;
 
+        // for following the target
+        void followTarget(const glm::vec3& targetPosition, float heightAboveTarget);
+
     private:
         void rotateX(float angle);
         void rotateY(float angle);
