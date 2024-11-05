@@ -82,6 +82,11 @@ public:
             pbrBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/pbr_vert.glsl");
             pbrBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/pbr_frag.glsl");
             m_pbrShader = pbrBuilder.build();
+
+            ShaderBuilder normalMappingBuilder;
+            normalMappingBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/normal_mapping_vert.glsl");
+            normalMappingBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/normal_mapping_frag.glsl");
+            m_normalMappingShader = normalMappingBuilder.build();
         }
         catch (ShaderLoadingException e)
         {
@@ -116,6 +121,9 @@ public:
             if (ImGui::Combo("Active Object", &currentObject, objectNames, IM_ARRAYSIZE(objectNames))) {
                 m_activeObject = static_cast<ObjectType>(currentObject);
             }
+            ImGui::Separator();
+            ImGui::Text("Normal Mapping");
+            ImGui::Checkbox("Use Normal Mapping", &m_useNormalMapping);
             ImGui::Separator();
             ImGui::Text("PBR Material Properties");
             ImGui::Checkbox("Use PBR Shading", &m_usePBR);
@@ -360,6 +368,7 @@ public:
         glm::mat4 gunModelMatrix = glm::rotate(turretModelMatrix, glm::radians(gunTiltAngle), glm::vec3(1.0f, 0.0f, 0.0f));
         renderMesh(m_gun, gunModelMatrix);
     }
+
     void renderBox() {
         // Render the skybox first to set up the surroundings
         m_skybox.render(m_projectionMatrix, m_activeCamera.viewMatrix(), m_cubemap);
@@ -368,15 +377,30 @@ public:
         m_boxColorTexture.bind(GL_TEXTURE0);
         m_boxNormalTexture.bind(GL_TEXTURE1);
 
-        // Choose the shader based on whether PBR is enabled
-        Shader& shader = m_usePBR ? m_pbrShader : m_environmentShader;
+        // Choose the shader based on whether normal mapping is enabled
+        Shader& shader = m_useNormalMapping ? m_normalMappingShader : (m_usePBR ? m_pbrShader : m_environmentShader);
         shader.bind();
 
         // Set texture uniforms in the shader
-        glUniform1i(shader.getUniformLocation("colorMap"), 0);  // Texture unit 0 for color
-        glUniform1i(shader.getUniformLocation("normalMap"), 1); // Texture unit 1 for normal
+        glUniform1i(shader.getUniformLocation("colorMapCube"), 0);  // Texture unit 0 for color
+        glUniform1i(shader.getUniformLocation("normalMap"), 1);     // Texture unit 1 for normal
 
-        // Set PBR material properties if using PBR
+        // Calculate the model, view, projection matrices
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        glm::mat4 viewMatrix = m_activeCamera.viewMatrix();
+        glm::mat4 mvpMatrix = m_projectionMatrix * viewMatrix * modelMatrix;
+        glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+
+        // Pass the MVP matrix and other matrices to the shader
+        glUniformMatrix4fv(shader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(shader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(viewMatrix));
+        glUniformMatrix4fv(shader.getUniformLocation("projectionMatrix"), 1, GL_FALSE, glm::value_ptr(m_projectionMatrix));
+
+        // Pass light and view positions to the shader in world space
+        glUniform3fv(shader.getUniformLocation("lightPos"), 1, glm::value_ptr(lightPos));
+        glUniform3fv(shader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_activeCamera.cameraPos()));
+
+        // Set PBR material properties if PBR shading is enabled
         if (m_usePBR) {
             glUniform3fv(shader.getUniformLocation("albedo"), 1, glm::value_ptr(m_albedo));
             glUniform1f(shader.getUniformLocation("metallic"), m_metallic);
@@ -384,23 +408,18 @@ public:
             glUniform1f(shader.getUniformLocation("ao"), m_ao);
         }
 
-        // Set environment mapping and reflectivity properties
+        // Set basic material properties (kd, ks, shininess) for specular and diffuse effects
+        glUniform3fv(shader.getUniformLocation("kd"), 1, glm::value_ptr(m_kd));
+        glUniform3fv(shader.getUniformLocation("ks"), 1, glm::value_ptr(m_ks));
+        glUniform1f(shader.getUniformLocation("shininess"), shininess);
+
+        // Set environment mapping and reflectivity properties if enabled
         glUniform1i(shader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
         if (m_useEnvironmentMapping) {
-            m_cubemap.bind(GL_TEXTURE2);  // Bind cubemap to texture unit 2
+            m_cubemap.bind(GL_TEXTURE2);
             glUniform1i(shader.getUniformLocation("cubemap"), 2);
             glUniform1f(shader.getUniformLocation("reflectivity"), m_reflectivity);
         }
-
-        // Model transformation for the box (identity if at origin)
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-        glm::mat4 mvpMatrix = m_projectionMatrix * m_activeCamera.viewMatrix() * modelMatrix;
-        glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
-
-        // Set transformation matrices in the shader
-        glUniformMatrix4fv(shader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-        glUniformMatrix4fv(shader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
-        glUniformMatrix3fv(shader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
 
         // Draw each mesh in m_box_meshes
         for (GPUMesh& mesh : m_box_meshes) {
@@ -468,9 +487,6 @@ public:
     {
         const glm::mat4 mvpMatrix = m_projectionMatrix * m_activeCamera.viewMatrix() * modelMatrix;
         const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
-
-        glm::vec3 lightPos = glm::vec3(5.0f, 5.0f, 5.0f);
-        glm::vec3 lightColor = glm::vec3(0.788f, 0.89f, 0.776f);
 
         for (GPUMesh& mesh : meshes)
         {
@@ -589,6 +605,8 @@ private:
     std::vector<GPUMesh> m_box_meshes;
     Texture m_boxColorTexture;
     Texture m_boxNormalTexture;
+    Shader m_normalMappingShader;
+    bool m_useNormalMapping = false;
 
     //Switch between objects
     enum class ObjectType {
@@ -631,7 +649,6 @@ private:
     glm::vec3 rectP3 = glm::vec3(0.0f, 0.0f, 10.0f);
 
     
-
     // PBR material properties
     glm::vec3 m_albedo{0.5f, 0.5f, 0.5f};
     float m_metallic{0.0f};
@@ -639,8 +656,6 @@ private:
     float m_ao{1.0f};
     bool m_usePBR{true};
 
-
-  
     // Basic material properties
     glm::vec3 m_kd{ 0.8f, 0.8f, 0.8f }; // Diffuse color
     glm::vec3 m_ks{ 0.1, 0.1f, 0.1f };  // Specular color
@@ -657,6 +672,9 @@ private:
     Camera m_camera_front;
     Camera m_camera_top;
     Camera m_activeCamera;
+
+    glm::vec3 lightPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 lightColor = glm::vec3(0.788f, 0.89f, 0.776f);
 };
 
 int main()
