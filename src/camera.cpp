@@ -65,7 +65,7 @@ void Camera::followTarget(const glm::vec3& targetPosition, float heightAboveTarg
 
 void Camera::updateInput()
 {
-    constexpr float moveSpeed = 0.03f;
+    constexpr float moveSpeed = 0.3f;
     constexpr float lookSpeed = 0.0015f;
 
     if (m_userInteraction) {

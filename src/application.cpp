@@ -35,7 +35,9 @@ public:
         m_camera_top(&m_window, glm::vec3(5, 20, -8), glm::vec3(0, -1, 1)),
         m_activeCamera(m_camera_front),
         m_activeCameraType(CameraType::Front),  // Initialize the active camera type
-        m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({ 0.0f, 0.0f, 0.0f }, { 5.0f, 5.0f, 0.0f }, { 10.0f, -5.0f, 0.0f }, { 15.0f, 0.0f, 0.0f })
+        m_skybox(RESOURCE_ROOT "shaders/"), m_bezierPath({ 0.0f, 0.0f, 0.0f }, { 5.0f, 5.0f, 0.0f }, { 10.0f, -5.0f, 0.0f }, { 15.0f, 0.0f, 0.0f }),
+        m_boxColorTexture(RESOURCE_ROOT "resources/box/box_base_color.png"),
+        m_boxNormalTexture(RESOURCE_ROOT "resources/box/box_normal.png")
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods)
                                      {
@@ -55,6 +57,9 @@ public:
         m_tank_body = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/tank_body.obj");
         m_gun = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/gun.obj");
         m_turret = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/turret.obj");
+
+        //box
+        m_box_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/box/box.obj");
 
         try
         {
@@ -98,9 +103,10 @@ public:
 
             ImGui::SetNextWindowSize(ImVec2(800, 1000), ImGuiCond_FirstUseEver);
             ImGui::Begin("User Controls");
-            if (ImGui::Button("Reset Simulation"))
-            {
-                resetSimulation();
+            if (m_activeObject == ObjectType::Tank) {
+                if (ImGui::Button("Reset Simulation")) {
+                    resetSimulation();
+                }
             }
             // Switching between objects
             ImGui::Separator();
@@ -354,29 +360,56 @@ public:
         glm::mat4 gunModelMatrix = glm::rotate(turretModelMatrix, glm::radians(gunTiltAngle), glm::vec3(1.0f, 0.0f, 0.0f));
         renderMesh(m_gun, gunModelMatrix);
     }
-    void renderBox()
-    {
-        m_box.bindColorTexture(GL_TEXTURE0);    // Bind color texture to texture unit 0
-        m_box.bindNormalTexture(GL_TEXTURE1);   // Bind normal map to texture unit 1
+    void renderBox() {
+        // Render the skybox first to set up the surroundings
+        m_skybox.render(m_projectionMatrix, m_activeCamera.viewMatrix(), m_cubemap);
 
+        // Bind the color and normal textures for the box
+        m_boxColorTexture.bind(GL_TEXTURE0);
+        m_boxNormalTexture.bind(GL_TEXTURE1);
+
+        // Choose the shader based on whether PBR is enabled
+        Shader& shader = m_usePBR ? m_pbrShader : m_environmentShader;
+        shader.bind();
+
+        // Set texture uniforms in the shader
+        glUniform1i(shader.getUniformLocation("colorMap"), 0);  // Texture unit 0 for color
+        glUniform1i(shader.getUniformLocation("normalMap"), 1); // Texture unit 1 for normal
+
+        // Set PBR material properties if using PBR
         if (m_usePBR) {
-            m_pbrShader.bind();
+            glUniform3fv(shader.getUniformLocation("albedo"), 1, glm::value_ptr(m_albedo));
+            glUniform1f(shader.getUniformLocation("metallic"), m_metallic);
+            glUniform1f(shader.getUniformLocation("roughness"), m_pbrRoughness);
+            glUniform1f(shader.getUniformLocation("ao"), m_ao);
+        }
 
-            // Set the shader uniforms for the textures
-            glUniform1i(m_pbrShader.getUniformLocation("colorMap"), 0); // Texture unit 0
-            //glUniform1i(m_pbrShader.getUniformLocation("normalMap"), 1); // Texture unit 1
-            glUniform3fv(m_pbrShader.getUniformLocation("albedo"), 1, glm::value_ptr(m_albedo));
-            glUniform1f(m_pbrShader.getUniformLocation("metallic"), m_metallic);
-            glUniform1f(m_pbrShader.getUniformLocation("roughness"), m_pbrRoughness);
-            glUniform1f(m_pbrShader.getUniformLocation("ao"), m_ao);
+        // Set environment mapping and reflectivity properties
+        glUniform1i(shader.getUniformLocation("useEnvironmentMapping"), m_useEnvironmentMapping);
+        if (m_useEnvironmentMapping) {
+            m_cubemap.bind(GL_TEXTURE2);  // Bind cubemap to texture unit 2
+            glUniform1i(shader.getUniformLocation("cubemap"), 2);
+            glUniform1f(shader.getUniformLocation("reflectivity"), m_reflectivity);
         }
-        else {
-            m_environmentShader.bind();
-            glUniform1i(m_environmentShader.getUniformLocation("colorMap"), 0); // Texture unit 0
-            //glUniform1i(m_environmentShader.getUniformLocation("normalMap"), 1); // Texture unit 1
+
+        // Model transformation for the box (identity if at origin)
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        glm::mat4 mvpMatrix = m_projectionMatrix * m_activeCamera.viewMatrix() * modelMatrix;
+        glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
+
+        // Set transformation matrices in the shader
+        glUniformMatrix4fv(shader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+        glUniformMatrix4fv(shader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix3fv(shader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+        // Draw each mesh in m_box_meshes
+        for (GPUMesh& mesh : m_box_meshes) {
+            mesh.draw(shader);
         }
-        // Loop through each mesh in the box and render with the correct shader and textures
     }
+
+
+
 
 
 
@@ -553,6 +586,9 @@ private:
 
     //Normal mapping box
     Box m_box;
+    std::vector<GPUMesh> m_box_meshes;
+    Texture m_boxColorTexture;
+    Texture m_boxNormalTexture;
 
     //Switch between objects
     enum class ObjectType {
