@@ -374,16 +374,16 @@ public:
         m_skybox.render(m_projectionMatrix, m_activeCamera.viewMatrix(), m_cubemap);
 
         // Bind the color and normal textures for the box
-        m_boxColorTexture.bind(GL_TEXTURE0);
-        m_boxNormalTexture.bind(GL_TEXTURE1);
+        m_boxColorTexture.bind(GL_TEXTURE2);
+        m_boxNormalTexture.bind(GL_TEXTURE3);
 
         // Choose the shader based on whether normal mapping is enabled
         Shader& shader = m_useNormalMapping ? m_normalMappingShader : (m_usePBR ? m_pbrShader : m_environmentShader);
         shader.bind();
 
         // Set texture uniforms in the shader
-        glUniform1i(shader.getUniformLocation("colorMapCube"), 0);  // Texture unit 0 for color
-        glUniform1i(shader.getUniformLocation("normalMap"), 1);     // Texture unit 1 for normal
+        glUniform1i(shader.getUniformLocation("colorMapCube"), 2);  // Texture unit 0 for color
+        glUniform1i(shader.getUniformLocation("normalMap"), 3);     // Texture unit 1 for normal
 
         // Calculate the model, view, projection matrices
         glm::mat4 modelMatrix = glm::mat4(1.0f);
